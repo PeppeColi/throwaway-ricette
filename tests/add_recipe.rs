@@ -12,9 +12,14 @@ use tempfile::TempDir;
 
 const LIST_FILE: &str = "ricette-list.json";
 
-/// The recipe data contract: every recipe with its ingredients as
-/// `(item, quantity, unit)`, in recipe order.
-const RECIPES: &[(&str, &[(&str, u64, &str)])] = &[
+/// One ingredient of a recipe: `(item, quantity, unit)`.
+type Ingredient = (&'static str, u64, &'static str);
+
+/// One recipe of the data contract: its name and its ingredients.
+type RecipeData = (&'static str, &'static [Ingredient]);
+
+/// The recipe data contract: every recipe with its ingredients, in recipe order.
+const RECIPES: &[RecipeData] = &[
     (
         "Tomato Pasta",
         &[
@@ -55,7 +60,11 @@ const RECIPES: &[(&str, &[(&str, u64, &str)])] = &[
     ),
     (
         "Cheese Omelette",
-        &[("egg", 3, "pieces"), ("cheese", 50, "g"), ("butter", 10, "g")],
+        &[
+            ("egg", 3, "pieces"),
+            ("cheese", 50, "g"),
+            ("butter", 10, "g"),
+        ],
     ),
 ];
 
@@ -101,14 +110,14 @@ fn read_entries(dir: &Path) -> Vec<Value> {
 }
 
 /// The `Added: ...` lines a recipe prints, built from the data contract.
-fn added_lines(ingredients: &[(&str, u64, &str)]) -> String {
+fn added_lines(ingredients: &[Ingredient]) -> String {
     ingredients
         .iter()
         .map(|(item, quantity, unit)| format!("Added: {item} {quantity} {unit}\n"))
         .collect()
 }
 
-fn recipe(name: &str) -> &'static [(&'static str, u64, &'static str)] {
+fn recipe(name: &str) -> &'static [Ingredient] {
     RECIPES
         .iter()
         .find(|(recipe_name, _)| *recipe_name == name)
@@ -204,7 +213,11 @@ fn each_of_the_five_recipes_adds_exactly_its_ingredients_and_quantities() {
         let output = sandbox.run(&["list", "add-recipe", *name]);
 
         assert_eq!(exit_code(&output), 0, "exit code for {name}");
-        assert_eq!(stdout(&output), added_lines(ingredients), "stdout for {name}");
+        assert_eq!(
+            stdout(&output),
+            added_lines(ingredients),
+            "stdout for {name}"
+        );
         let expected: Vec<Value> = ingredients
             .iter()
             .map(|(item, quantity, unit)| entry(item, *quantity, unit))
@@ -275,7 +288,10 @@ fn unknown_recipe_exits_1_with_message_on_stderr_and_creates_no_file() {
     assert_eq!(exit_code(&output), 1);
     assert_eq!(stderr(&output), "Unknown recipe: Pizza\n");
     assert_eq!(stdout(&output), "");
-    assert!(!sandbox.path().join(LIST_FILE).exists(), "no list file should be created");
+    assert!(
+        !sandbox.path().join(LIST_FILE).exists(),
+        "no list file should be created"
+    );
 }
 
 #[test]
@@ -288,7 +304,10 @@ fn unknown_recipe_leaves_an_existing_list_unchanged() {
 
     assert_eq!(exit_code(&output), 1);
     assert_eq!(stderr(&output), "Unknown recipe: Pizza\n");
-    assert_eq!(fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"), before);
+    assert_eq!(
+        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+        before
+    );
 }
 
 #[test]
@@ -315,7 +334,10 @@ fn recipes_search_tomato_keeps_its_names_only_output() {
     let output = sandbox.run(&["recipes", "search", "tomato"]);
 
     assert_eq!(exit_code(&output), 0);
-    assert_eq!(stdout(&output), "Tomato Pasta\nCaprese Salad\nVegetable Soup\n");
+    assert_eq!(
+        stdout(&output),
+        "Tomato Pasta\nCaprese Salad\nVegetable Soup\n"
+    );
 }
 
 #[test]

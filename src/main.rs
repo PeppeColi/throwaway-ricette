@@ -328,7 +328,9 @@ fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
 
 /// The catalog recipe whose name equals `name`, ignoring ASCII case.
 fn find_recipe(name: &str) -> Option<&'static Recipe> {
-    CATALOG.iter().find(|recipe| recipe.name.eq_ignore_ascii_case(name))
+    CATALOG
+        .iter()
+        .find(|recipe| recipe.name.eq_ignore_ascii_case(name))
 }
 
 /// Adds every ingredient of `recipe` to the list, in recipe order, with the same
@@ -337,11 +339,19 @@ fn find_recipe(name: &str) -> Option<&'static Recipe> {
 fn add_recipe(recipe: &Recipe) -> Result<(), String> {
     let mut list = load()?;
     for ingredient in recipe.ingredients {
-        add_quantified(&mut list, ingredient.item, ingredient.quantity, ingredient.unit)?;
+        add_quantified(
+            &mut list,
+            ingredient.item,
+            ingredient.quantity,
+            ingredient.unit,
+        )?;
     }
     save(&list)?;
     for ingredient in recipe.ingredients {
-        println!("Added: {} {} {}", ingredient.item, ingredient.quantity, ingredient.unit);
+        println!(
+            "Added: {} {} {}",
+            ingredient.item, ingredient.quantity, ingredient.unit
+        );
     }
     Ok(())
 }
