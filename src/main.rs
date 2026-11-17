@@ -214,6 +214,9 @@ enum ListAction {
     AddRecipe {
         /// The recipe name, compared ignoring ASCII case; quote names with spaces.
         name: String,
+        /// How many servings to add; every quantity is multiplied by it.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+        servings: u64,
     },
     /// Print the shopping list, one item per line.
     Show,
@@ -283,12 +286,12 @@ fn main() -> ExitCode {
         },
         Command::List { action } => match action {
             ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
-            ListAction::AddRecipe { name } => {
+            ListAction::AddRecipe { name, servings } => {
                 let Some(recipe) = find_recipe(&name) else {
                     eprintln!("Unknown recipe: {name}");
                     return ExitCode::from(1);
                 };
-                add_recipe(recipe)
+                add_recipe(recipe, servings)
             }
             ListAction::Show => show(),
             ListAction::Count => count(),
@@ -370,11 +373,11 @@ fn find_recipe(name: &str) -> Option<&'static Recipe> {
         .find(|recipe| recipe.name.eq_ignore_ascii_case(name))
 }
 
-/// Adds every ingredient of `recipe` to the list, in recipe order, with the same
-/// merge rule as `add`. The list is read once and written once, so a failure
-/// leaves the file unchanged and prints nothing.
-fn add_recipe(recipe: &Recipe) -> Result<(), String> {
-    let ingredients = scaled_ingredients(recipe, 1)?;
+/// Adds every ingredient of `recipe`, scaled to `servings`, to the list, in recipe
+/// order, with the same merge rule as `add`. The list is read once and written
+/// once, so a failure leaves the file unchanged and prints nothing.
+fn add_recipe(recipe: &Recipe, servings: u64) -> Result<(), String> {
+    let ingredients = scaled_ingredients(recipe, servings)?;
     let mut list = load()?;
     for ingredient in &ingredients {
         add_quantified(
