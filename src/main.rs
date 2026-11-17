@@ -152,9 +152,6 @@ fn main() -> ExitCode {
     }
 }
 
-<<<<<<< HEAD
-fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
-=======
 fn list_recipes() {
     for recipe in CATALOG {
         println!("{}", recipe.name);
@@ -178,8 +175,7 @@ fn search_recipes(ingredient: &str) {
     }
 }
 
-fn add(item: &str) -> Result<(), String> {
->>>>>>> origin/dev
+fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
     let mut list = load()?;
     match (qty, unit) {
         (Some(quantity), Some(unit)) => {
