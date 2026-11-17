@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -11,30 +11,147 @@ const LIST_FILE: &str = "ricette-list.json";
 /// A recipe in the built-in catalog.
 struct Recipe {
     name: &'static str,
-    ingredients: &'static [&'static str],
+    ingredients: &'static [Ingredient],
+}
+
+/// An item a recipe needs, with the quantity and unit required.
+struct Ingredient {
+    item: &'static str,
+    quantity: u64,
+    unit: &'static str,
 }
 
 /// The fixed catalog, embedded in the binary. Declaration order is display order.
 const CATALOG: &[Recipe] = &[
     Recipe {
         name: "Tomato Pasta",
-        ingredients: &["pasta", "tomato", "garlic", "olive oil"],
+        ingredients: &[
+            Ingredient {
+                item: "pasta",
+                quantity: 200,
+                unit: "g",
+            },
+            Ingredient {
+                item: "tomato",
+                quantity: 400,
+                unit: "g",
+            },
+            Ingredient {
+                item: "garlic",
+                quantity: 2,
+                unit: "cloves",
+            },
+            Ingredient {
+                item: "olive oil",
+                quantity: 2,
+                unit: "tbsp",
+            },
+        ],
     },
     Recipe {
         name: "Mushroom Risotto",
-        ingredients: &["rice", "mushroom", "onion", "butter", "parmesan"],
+        ingredients: &[
+            Ingredient {
+                item: "rice",
+                quantity: 300,
+                unit: "g",
+            },
+            Ingredient {
+                item: "mushroom",
+                quantity: 250,
+                unit: "g",
+            },
+            Ingredient {
+                item: "onion",
+                quantity: 1,
+                unit: "piece",
+            },
+            Ingredient {
+                item: "butter",
+                quantity: 50,
+                unit: "g",
+            },
+            Ingredient {
+                item: "parmesan",
+                quantity: 80,
+                unit: "g",
+            },
+        ],
     },
     Recipe {
         name: "Caprese Salad",
-        ingredients: &["tomato", "mozzarella", "basil", "olive oil"],
+        ingredients: &[
+            Ingredient {
+                item: "tomato",
+                quantity: 300,
+                unit: "g",
+            },
+            Ingredient {
+                item: "mozzarella",
+                quantity: 250,
+                unit: "g",
+            },
+            Ingredient {
+                item: "basil",
+                quantity: 10,
+                unit: "g",
+            },
+            Ingredient {
+                item: "olive oil",
+                quantity: 1,
+                unit: "tbsp",
+            },
+        ],
     },
     Recipe {
         name: "Vegetable Soup",
-        ingredients: &["carrot", "potato", "onion", "celery", "tomato"],
+        ingredients: &[
+            Ingredient {
+                item: "carrot",
+                quantity: 200,
+                unit: "g",
+            },
+            Ingredient {
+                item: "potato",
+                quantity: 300,
+                unit: "g",
+            },
+            Ingredient {
+                item: "onion",
+                quantity: 1,
+                unit: "piece",
+            },
+            Ingredient {
+                item: "celery",
+                quantity: 150,
+                unit: "g",
+            },
+            Ingredient {
+                item: "tomato",
+                quantity: 400,
+                unit: "g",
+            },
+        ],
     },
     Recipe {
         name: "Cheese Omelette",
-        ingredients: &["egg", "cheese", "butter"],
+        ingredients: &[
+            Ingredient {
+                item: "egg",
+                quantity: 3,
+                unit: "pieces",
+            },
+            Ingredient {
+                item: "cheese",
+                quantity: 50,
+                unit: "g",
+            },
+            Ingredient {
+                item: "butter",
+                quantity: 10,
+                unit: "g",
+            },
+        ],
     },
 ];
 
@@ -84,6 +201,11 @@ enum ListAction {
         /// The unit the quantity is counted in; it must not be empty. Needs `--qty`.
         #[arg(long, requires = "qty", value_parser = non_empty)]
         unit: Option<String>,
+    },
+    /// Add every ingredient of a recipe to the shopping list, with its quantities.
+    AddRecipe {
+        /// The recipe name, compared ignoring ASCII case; quote names with spaces.
+        name: String,
     },
     /// Print the shopping list, one item per line.
     Show,
@@ -139,6 +261,13 @@ fn main() -> ExitCode {
         }
         Command::List { action } => match action {
             ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
+            ListAction::AddRecipe { name } => {
+                let Some(recipe) = find_recipe(&name) else {
+                    eprintln!("Unknown recipe: {name}");
+                    return ExitCode::from(1);
+                };
+                add_recipe(recipe)
+            }
             ListAction::Show => show(),
             ListAction::Clear => clear(),
         },
@@ -164,7 +293,7 @@ fn search_recipes(ingredient: &str) {
         if recipe
             .ingredients
             .iter()
-            .any(|name| name.eq_ignore_ascii_case(ingredient))
+            .any(|entry| entry.item.eq_ignore_ascii_case(ingredient))
         {
             println!("{}", recipe.name);
             found = true;
@@ -193,6 +322,36 @@ fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
             save(&list)?;
             println!("Added: {item}");
         }
+    }
+    Ok(())
+}
+
+/// The catalog recipe whose name equals `name`, ignoring ASCII case.
+fn find_recipe(name: &str) -> Option<&'static Recipe> {
+    CATALOG
+        .iter()
+        .find(|recipe| recipe.name.eq_ignore_ascii_case(name))
+}
+
+/// Adds every ingredient of `recipe` to the list, in recipe order, with the same
+/// merge rule as `add`. The list is read once and written once, so a failure
+/// leaves the file unchanged and prints nothing.
+fn add_recipe(recipe: &Recipe) -> Result<(), String> {
+    let mut list = load()?;
+    for ingredient in recipe.ingredients {
+        add_quantified(
+            &mut list,
+            ingredient.item,
+            ingredient.quantity,
+            ingredient.unit,
+        )?;
+    }
+    save(&list)?;
+    for ingredient in recipe.ingredients {
+        println!(
+            "Added: {} {} {}",
+            ingredient.item, ingredient.quantity, ingredient.unit
+        );
     }
     Ok(())
 }
@@ -259,9 +418,32 @@ fn load() -> Result<ShoppingList, String> {
     }
 }
 
+/// Replaces the list file. The new contents go to a temporary file next to it
+/// first, so a failed write leaves the existing list unchanged.
 fn save(list: &ShoppingList) -> Result<(), String> {
     let mut text = serde_json::to_string_pretty(list)
         .map_err(|e| format!("cannot serialize the shopping list: {e}"))?;
     text.push('\n');
-    fs::write(LIST_FILE, text).map_err(|e| format!("cannot write {LIST_FILE}: {e}"))
+    // One temporary file per process, created exclusively, so two saves in
+    // the same directory never write to or rename each other's file.
+    let temp = format!("{LIST_FILE}.{}.tmp", std::process::id());
+    let result = write_new(&temp, text.as_bytes())
+        .map_err(|e| format!("cannot write {temp}: {e}"))
+        .and_then(|()| {
+            fs::rename(&temp, LIST_FILE).map_err(|e| format!("cannot replace {LIST_FILE}: {e}"))
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
+/// Writes `contents` to a file that must not exist yet.
+fn write_new(path: &str, contents: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(contents)?;
+    file.sync_all()
 }
