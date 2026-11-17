@@ -301,6 +301,9 @@ fn main() -> ExitCode {
             RecipesAction::Show { name, servings } => {
                 let Some(recipe) = find_recipe(&name) else {
                     eprintln!("Unknown recipe: {name}");
+                    if let Some(suggestion) = suggest_recipe(CATALOG, &name) {
+                        eprintln!("Did you mean: {}?", suggestion.name);
+                    }
                     return ExitCode::from(1);
                 };
                 show_recipe(recipe, servings)
@@ -403,6 +406,40 @@ fn find_recipe(name: &str) -> Option<&'static Recipe> {
     CATALOG
         .iter()
         .find(|recipe| recipe.name.eq_ignore_ascii_case(name))
+}
+
+/// The most edits an unknown name may be away from a recipe name and still be suggested.
+const MAX_SUGGESTION_DISTANCE: usize = 2;
+
+/// The one recipe of `catalog` within `MAX_SUGGESTION_DISTANCE` edits of `name`,
+/// ignoring ASCII case. `None` when no recipe or more than one recipe is that close,
+/// so a suggestion is never a guess between two names.
+fn suggest_recipe<'a>(catalog: &'a [Recipe], name: &str) -> Option<&'a Recipe> {
+    let mut close = catalog
+        .iter()
+        .filter(|recipe| edit_distance(recipe.name, name) <= MAX_SUGGESTION_DISTANCE);
+    let first = close.next()?;
+    close.next().is_none().then_some(first)
+}
+
+/// The Levenshtein distance between `a` and `b`: the fewest single-character
+/// insertions, deletions and substitutions that turn one into the other. ASCII
+/// letters are compared without case.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().map(|c| c.to_ascii_lowercase()).collect();
+    // `previous[j]` holds the distance between the prefix of `a` read so far and `b[..j]`.
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, a_char) in a.chars().map(|c| c.to_ascii_lowercase()).enumerate() {
+        let mut current = vec![i + 1];
+        for (j, &b_char) in b.iter().enumerate() {
+            let substitution = previous[j] + usize::from(a_char != b_char);
+            let insertion = current[j] + 1;
+            let deletion = previous[j + 1] + 1;
+            current.push(substitution.min(insertion).min(deletion));
+        }
+        previous = current;
+    }
+    previous[b.len()]
 }
 
 /// Adds every ingredient of `recipe`, scaled to `servings`, to the list, in recipe
@@ -644,6 +681,60 @@ mod tests {
             find_recipe("cHeEsE oMeLeTtE").map(|r| r.name),
             Some("Cheese Omelette")
         );
+    }
+
+    #[test]
+    fn edit_distance_counts_single_character_edits() {
+        assert_eq!(edit_distance("Pizza", "Pizza"), 0);
+        assert_eq!(edit_distance("Tomatto Pasta", "Tomato Pasta"), 1);
+        assert_eq!(edit_distance("Caprese Salat", "Caprese Salad"), 1);
+        assert_eq!(edit_distance("Caprese Salda", "Caprese Salad"), 2);
+        assert_eq!(edit_distance("Pasta", "Pizza"), 3);
+        assert_eq!(edit_distance("", "abc"), 3);
+    }
+
+    #[test]
+    fn edit_distance_ignores_ascii_case() {
+        assert_eq!(edit_distance("tomato PASTA", "Tomato Pasta"), 0);
+    }
+
+    #[test]
+    fn suggest_recipe_returns_the_one_recipe_within_two_edits() {
+        assert_eq!(
+            suggest_recipe(CATALOG, "Tomatto Pasta").map(|r| r.name),
+            Some("Tomato Pasta")
+        );
+        assert_eq!(
+            suggest_recipe(CATALOG, "cheese omlette").map(|r| r.name),
+            Some("Cheese Omelette")
+        );
+        assert_eq!(
+            suggest_recipe(CATALOG, "Mushroom Risoto").map(|r| r.name),
+            Some("Mushroom Risotto")
+        );
+    }
+
+    #[test]
+    fn suggest_recipe_returns_none_when_no_recipe_is_within_two_edits() {
+        assert!(suggest_recipe(CATALOG, "Pizza").is_none());
+        assert!(suggest_recipe(CATALOG, "Tomato").is_none());
+        assert!(suggest_recipe(CATALOG, "").is_none());
+    }
+
+    #[test]
+    fn suggest_recipe_returns_none_when_two_recipes_are_within_two_edits() {
+        const CLOSE: &[Recipe] = &[
+            Recipe {
+                name: "Soup",
+                ingredients: &[],
+            },
+            Recipe {
+                name: "Soap",
+                ingredients: &[],
+            },
+        ];
+        assert!(suggest_recipe(CLOSE, "Soop").is_none());
+        assert!(suggest_recipe(CLOSE, "Soup").is_none());
     }
 
     #[test]
