@@ -292,3 +292,116 @@ fn show_succeeds_without_reading_a_malformed_list_file() {
         "{ this is not json"
     );
 }
+
+#[test]
+fn show_with_servings_2_doubles_every_quantity_of_tomato_pasta() {
+    let (output, _dir) = run_in_empty_dir(&["recipes", "show", "Tomato Pasta", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(
+        stdout(&output),
+        "pasta 400 g\ntomato 800 g\ngarlic 4 cloves\nolive oil 4 tbsp\n"
+    );
+    assert_eq!(stderr(&output), "");
+}
+
+#[test]
+fn show_with_servings_1_prints_exactly_the_same_as_without_the_flag() {
+    let (without, _dir) = run_in_empty_dir(&["recipes", "show", "Tomato Pasta"]);
+    let (with, _other) = run_in_empty_dir(&["recipes", "show", "Tomato Pasta", "--servings", "1"]);
+
+    assert_eq!(exit_code(&with), 0);
+    assert_eq!(stdout(&with), stdout(&without));
+    assert_eq!(stderr(&with), "");
+}
+
+#[test]
+fn show_with_servings_2_prints_twice_the_catalog_quantities_for_every_recipe() {
+    let cases = [
+        (
+            "Tomato Pasta",
+            "pasta 400 g\ntomato 800 g\ngarlic 4 cloves\nolive oil 4 tbsp\n",
+        ),
+        (
+            "Mushroom Risotto",
+            "rice 600 g\nmushroom 500 g\nonion 2 piece\nbutter 100 g\nparmesan 160 g\n",
+        ),
+        (
+            "Caprese Salad",
+            "tomato 600 g\nmozzarella 500 g\nbasil 20 g\nolive oil 2 tbsp\n",
+        ),
+        (
+            "Vegetable Soup",
+            "carrot 400 g\npotato 600 g\nonion 2 piece\ncelery 300 g\ntomato 800 g\n",
+        ),
+        (
+            "Cheese Omelette",
+            "egg 6 pieces\ncheese 100 g\nbutter 20 g\n",
+        ),
+    ];
+    for (name, expected) in cases {
+        let (output, _dir) = run_in_empty_dir(&["recipes", "show", name, "--servings", "2"]);
+
+        assert_eq!(exit_code(&output), 0, "exit code for {name}");
+        assert_eq!(stdout(&output), expected, "output for {name}");
+        assert_eq!(stderr(&output), "", "stderr for {name}");
+    }
+}
+
+#[test]
+fn show_with_an_invalid_servings_value_is_a_usage_error_with_empty_stdout() {
+    for value in ["0", "-1", "two"] {
+        let (output, _dir) =
+            run_in_empty_dir(&["recipes", "show", "Tomato Pasta", "--servings", value]);
+
+        assert_eq!(exit_code(&output), 2, "exit code for --servings {value}");
+        // Clap's usage errors all end with this hint, whether the value is out of range or not a number.
+        assert!(
+            stderr(&output).starts_with("error: ")
+                && stderr(&output).contains("For more information, try '--help'."),
+            "stderr for --servings {value} was {:?}",
+            stderr(&output)
+        );
+        assert_eq!(stdout(&output), "", "stdout for --servings {value}");
+    }
+}
+
+#[test]
+fn show_with_servings_that_overflow_fails_with_no_stdout_and_creates_no_file() {
+    let (output, dir) = run_in_empty_dir(&[
+        "recipes",
+        "show",
+        "Tomato Pasta",
+        "--servings",
+        "18446744073709551615",
+    ]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "error: the quantity of pasta in g is too large\n"
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(entries_in(dir.path()), Vec::<String>::new());
+}
+
+#[test]
+fn show_with_servings_does_not_read_or_write_a_malformed_list_file() {
+    let dir = TempDir::new().expect("create temporary directory");
+    fs::write(dir.path().join("ricette-list.json"), "{ this is not json").expect("write fixture");
+
+    let output = run_in(
+        dir.path(),
+        &["recipes", "show", "Tomato Pasta", "--servings", "2"],
+    );
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("ricette-list.json")).expect("read fixture"),
+        "{ this is not json"
+    );
+    assert_eq!(
+        entries_in(dir.path()),
+        vec!["ricette-list.json".to_string()]
+    );
+}

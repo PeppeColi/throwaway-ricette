@@ -190,6 +190,9 @@ enum RecipesAction {
     Show {
         /// The recipe name, compared ignoring ASCII case; quote names with spaces.
         name: String,
+        /// How many servings to print; every quantity is multiplied by it.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+        servings: u64,
     },
 }
 
@@ -270,12 +273,12 @@ fn main() -> ExitCode {
                 search_recipes(&ingredient);
                 Ok(())
             }
-            RecipesAction::Show { name } => {
+            RecipesAction::Show { name, servings } => {
                 let Some(recipe) = find_recipe(&name) else {
                     eprintln!("Unknown recipe: {name}");
                     return ExitCode::from(1);
                 };
-                show_recipe(recipe)
+                show_recipe(recipe, servings)
             }
         },
         Command::List { action } => match action {
@@ -325,10 +328,10 @@ fn search_recipes(ingredient: &str) {
     }
 }
 
-/// Prints the ingredients of `recipe` for one serving. Reads and writes no files.
-fn show_recipe(recipe: &Recipe) -> Result<(), String> {
+/// Prints the ingredients of `recipe` for `servings` servings. Reads and writes no files.
+fn show_recipe(recipe: &Recipe, servings: u64) -> Result<(), String> {
     // Scaled before the first line is printed, so a failure prints nothing.
-    let ingredients = scaled_ingredients(recipe, 1)?;
+    let ingredients = scaled_ingredients(recipe, servings)?;
     for ingredient in &ingredients {
         println!(
             "{} {} {}",

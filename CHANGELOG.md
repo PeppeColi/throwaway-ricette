@@ -17,3 +17,4 @@ lines under a new heading with the version and the date.
 - `ricette list last` prints the item of the most recently added shopping list entry, or `The shopping list is empty.`
 - `ricette list add-recipe "<name>"` adds every ingredient of a recipe to the shopping list with its quantity and unit; an unknown recipe name exits 1 and leaves the list unchanged.
 - `ricette recipes show "<name>"` prints the ingredients of a recipe, one per line as `<item> <quantity> <unit>`; an unknown recipe name exits 1.
+- `ricette recipes show "<name>" --servings <n>` multiplies every quantity by `n`, a positive whole number that defaults to 1.
