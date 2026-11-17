@@ -10,5 +10,6 @@ lines under a new heading with the version and the date.
 
 ### Added
 
+- `ricette recipes list` and `ricette recipes search <ingredient>` show the built-in catalog of five recipes.
 - `ricette list add`, `ricette list show` and `ricette list clear` keep a shopping list in `ricette-list.json` in the current directory.
 - `ricette list add <item> --qty <n> --unit <u>` records an amount; adding the same item in the same unit again sums into one line, and `ricette list show` prints amounts next to items.

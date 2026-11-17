@@ -8,6 +8,36 @@ use serde::{Deserialize, Serialize};
 /// The shopping list lives in this file, relative to the working directory.
 const LIST_FILE: &str = "ricette-list.json";
 
+/// A recipe in the built-in catalog.
+struct Recipe {
+    name: &'static str,
+    ingredients: &'static [&'static str],
+}
+
+/// The fixed catalog, embedded in the binary. Declaration order is display order.
+const CATALOG: &[Recipe] = &[
+    Recipe {
+        name: "Tomato Pasta",
+        ingredients: &["pasta", "tomato", "garlic", "olive oil"],
+    },
+    Recipe {
+        name: "Mushroom Risotto",
+        ingredients: &["rice", "mushroom", "onion", "butter", "parmesan"],
+    },
+    Recipe {
+        name: "Caprese Salad",
+        ingredients: &["tomato", "mozzarella", "basil", "olive oil"],
+    },
+    Recipe {
+        name: "Vegetable Soup",
+        ingredients: &["carrot", "potato", "onion", "celery", "tomato"],
+    },
+    Recipe {
+        name: "Cheese Omelette",
+        ingredients: &["egg", "cheese", "butter"],
+    },
+];
+
 /// Cooking helpers for the terminal.
 #[derive(Parser)]
 #[command(name = "ricette", version, about)]
@@ -18,10 +48,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Work with the built-in recipes.
+    Recipes {
+        #[command(subcommand)]
+        action: RecipesAction,
+    },
     /// Keep and print the shopping list.
     List {
         #[command(subcommand)]
         action: ListAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RecipesAction {
+    /// Print the names of all recipes.
+    List,
+    /// Print the names of the recipes that use an ingredient.
+    Search {
+        /// The ingredient to look for, compared ignoring ASCII case.
+        ingredient: String,
     },
 }
 
@@ -84,6 +130,13 @@ fn non_empty(value: &str) -> Result<String, String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::Recipes { action } => {
+            match action {
+                RecipesAction::List => list_recipes(),
+                RecipesAction::Search { ingredient } => search_recipes(&ingredient),
+            }
+            Ok(())
+        }
         Command::List { action } => match action {
             ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
             ListAction::Show => show(),
@@ -96,6 +149,29 @@ fn main() -> ExitCode {
             eprintln!("error: {message}");
             ExitCode::from(1)
         }
+    }
+}
+
+fn list_recipes() {
+    for recipe in CATALOG {
+        println!("{}", recipe.name);
+    }
+}
+
+fn search_recipes(ingredient: &str) {
+    let mut found = false;
+    for recipe in CATALOG {
+        if recipe
+            .ingredients
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(ingredient))
+        {
+            println!("{}", recipe.name);
+            found = true;
+        }
+    }
+    if !found {
+        println!("No recipes found.");
     }
 }
 
