@@ -1,4 +1,4 @@
-//! Integration tests for `ricette list add|show|clear|count`.
+//! Integration tests for `ricette list add|show|clear|count|last`.
 //!
 //! Each test runs the built binary in a fresh temporary working directory and
 //! checks stdout, stderr, the exit code and the `ricette-list.json` file.
@@ -530,6 +530,62 @@ fn count_with_a_malformed_list_fails_and_leaves_the_file_unchanged() {
     sandbox.write_list(malformed);
 
     let output = sandbox.run(&["list", "count"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert!(
+        stderr(&output).contains("cannot be read"),
+        "stderr should report the shopping list cannot be read, got: {}",
+        stderr(&output)
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(fs::read(sandbox.path().join(LIST_FILE)).unwrap(), malformed);
+}
+
+#[test]
+fn last_without_a_list_file_prints_empty_message_and_creates_no_file() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["list", "last"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "The shopping list is empty.\n");
+    assert!(
+        !sandbox.path().join(LIST_FILE).exists(),
+        "`list last` must not create the list file"
+    );
+}
+
+#[test]
+fn last_after_two_adds_prints_the_item_of_the_last_entry() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["list", "add", "milk"]);
+    sandbox.run(&["list", "add", "eggs"]);
+
+    let output = sandbox.run(&["list", "last"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "eggs\n");
+}
+
+#[test]
+fn last_after_clear_prints_empty_message() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["list", "add", "milk"]);
+    sandbox.run(&["list", "clear"]);
+
+    let output = sandbox.run(&["list", "last"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "The shopping list is empty.\n");
+}
+
+#[test]
+fn last_with_a_malformed_list_fails_and_leaves_the_file_unchanged() {
+    let sandbox = Sandbox::new();
+    let malformed = b"{\"entries\": [{\"item\": \"milk\"";
+    sandbox.write_list(malformed);
+
+    let output = sandbox.run(&["list", "last"]);
 
     assert_eq!(exit_code(&output), 1);
     assert!(
