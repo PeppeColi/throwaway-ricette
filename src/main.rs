@@ -218,7 +218,15 @@ enum ListAction {
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
         servings: u64,
     },
-    /// Print the shopping list, one item per line.
+    /// Mark every entry with an item as bought.
+    Bought {
+        /// The item to mark, compared exactly; it must not be empty.
+        #[arg(value_parser = non_empty)]
+        item: String,
+    },
+    /// Remove every bought entry from the shopping list.
+    ClearBought,
+    /// Print the shopping list, one item per line; bought entries end with `[bought]`.
     Show,
     /// Print how many entries the shopping list has.
     Count,
@@ -243,15 +251,29 @@ struct ShoppingListEntry {
     quantity: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     unit: Option<String>,
+    /// Whether the item has been bought. Files written before this field
+    /// existed read as not bought, and an entry that is not bought is written
+    /// without the field, so such files keep their shape.
+    #[serde(default, skip_serializing_if = "is_false")]
+    bought: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl ShoppingListEntry {
     /// The entry as shown to the user: `<item> <quantity> <unit>` when quantified,
-    /// `<item>` when plain.
+    /// `<item>` when plain, followed by ` [bought]` when bought.
     fn display(&self) -> String {
-        match (self.quantity, &self.unit) {
+        let line = match (self.quantity, &self.unit) {
             (Some(quantity), Some(unit)) => format!("{} {quantity} {unit}", self.item),
             _ => self.item.clone(),
+        };
+        if self.bought {
+            format!("{line} [bought]")
+        } else {
+            line
         }
     }
 }
@@ -293,6 +315,15 @@ fn main() -> ExitCode {
                 };
                 add_recipe(recipe, servings)
             }
+            ListAction::Bought { item } => match mark_bought(&item) {
+                Ok(true) => Ok(()),
+                Ok(false) => {
+                    eprintln!("No entry for: {item}");
+                    return ExitCode::from(1);
+                }
+                Err(message) => Err(message),
+            },
+            ListAction::ClearBought => clear_bought(),
             ListAction::Show => show(),
             ListAction::Count => count(),
             ListAction::Last => last(),
@@ -358,6 +389,7 @@ fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
                 item: item.to_string(),
                 quantity: None,
                 unit: None,
+                bought: false,
             });
             save(&list)?;
             println!("Added: {item}");
@@ -440,13 +472,52 @@ fn add_quantified(
                 .checked_add(quantity)
                 .ok_or_else(|| format!("the quantity of {item} in {unit} is too large"))?;
             entry.quantity = Some(total);
+            // The quantity changed, so what was bought is no longer enough.
+            entry.bought = false;
         }
         None => list.entries.push(ShoppingListEntry {
             item: item.to_string(),
             quantity: Some(quantity),
             unit: Some(unit.to_string()),
+            bought: false,
         }),
     }
+    Ok(())
+}
+
+/// Marks as bought every entry whose item equals `item` exactly, plain and
+/// quantified alike. The list is read once and written once, and only when an
+/// entry matched; prints `Bought: <item>` after the write. Returns whether an
+/// entry matched.
+fn mark_bought(item: &str) -> Result<bool, String> {
+    let mut list = load()?;
+    let mut matched = false;
+    for entry in list.entries.iter_mut().filter(|entry| entry.item == item) {
+        entry.bought = true;
+        matched = true;
+    }
+    if matched {
+        save(&list)?;
+        println!("Bought: {item}");
+    }
+    Ok(matched)
+}
+
+/// Removes every bought entry, keeping the others in their order. The list is
+/// read once and written once; with no bought entries nothing is written, so a
+/// missing file is not created.
+fn clear_bought() -> Result<(), String> {
+    let mut list = load()?;
+    let entries_before = list.entries.len();
+    list.entries.retain(|entry| !entry.bought);
+    let removed = entries_before - list.entries.len();
+    if removed == 0 {
+        println!("No bought entries.");
+        return Ok(());
+    }
+    save(&list)?;
+    let noun = if removed == 1 { "entry" } else { "entries" };
+    println!("Removed {removed} bought {noun}.");
     Ok(())
 }
 
