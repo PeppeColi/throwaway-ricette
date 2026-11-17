@@ -18,3 +18,4 @@ lines under a new heading with the version and the date.
 - `ricette list add-recipe "<name>"` adds every ingredient of a recipe to the shopping list with its quantity and unit; an unknown recipe name exits 1 and leaves the list unchanged.
 - `ricette recipes show "<name>"` prints the ingredients of a recipe, one per line as `<item> <quantity> <unit>`; an unknown recipe name exits 1.
 - `ricette recipes show "<name>" --servings <n>` multiplies every quantity by `n`, a positive whole number that defaults to 1.
+- `ricette list add-recipe "<name>" --servings <n>` adds the recipe scaled by `n` to the shopping list, summing with amounts already listed, and prints the scaled amounts.

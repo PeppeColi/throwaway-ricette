@@ -400,3 +400,228 @@ fn recipes_list_keeps_its_names_only_output() {
         "Tomato Pasta\nMushroom Risotto\nCaprese Salad\nVegetable Soup\nCheese Omelette\n"
     );
 }
+
+/// The `Added: ...` lines of a recipe scaled by `servings`, built from the data contract.
+fn scaled_added_lines(ingredients: &[Ingredient], servings: u64) -> String {
+    ingredients
+        .iter()
+        .map(|(item, quantity, unit)| format!("Added: {item} {} {unit}\n", quantity * servings))
+        .collect()
+}
+
+#[test]
+fn servings_2_on_an_empty_list_prints_scaled_lines_and_writes_scaled_entries() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(
+        stdout(&output),
+        "Added: pasta 400 g\nAdded: tomato 800 g\nAdded: garlic 4 cloves\nAdded: olive oil 4 tbsp\n"
+    );
+    assert_eq!(
+        read_entries(sandbox.path()),
+        vec![
+            entry("pasta", 400, "g"),
+            entry("tomato", 800, "g"),
+            entry("garlic", 4, "cloves"),
+            entry("olive oil", 4, "tbsp"),
+        ]
+    );
+}
+
+#[test]
+fn servings_2_sums_scaled_amounts_into_existing_entries_and_prints_scaled_lines() {
+    let sandbox = Sandbox::new();
+    assert_eq!(
+        exit_code(&sandbox.run(&["list", "add-recipe", "Tomato Pasta"])),
+        0
+    );
+
+    let output = sandbox.run(&["list", "add-recipe", "Caprese Salad", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(
+        stdout(&output),
+        scaled_added_lines(recipe("Caprese Salad"), 2)
+    );
+    assert_eq!(
+        stdout(&output),
+        "Added: tomato 600 g\nAdded: mozzarella 500 g\nAdded: basil 20 g\nAdded: olive oil 2 tbsp\n"
+    );
+
+    let shown = sandbox.run(&["list", "show"]);
+    assert_eq!(exit_code(&shown), 0);
+    assert_eq!(
+        stdout(&shown),
+        "pasta 200 g\ntomato 1000 g\ngarlic 2 cloves\nolive oil 4 tbsp\nmozzarella 500 g\nbasil 20 g\n"
+    );
+}
+
+#[test]
+fn servings_1_behaves_exactly_like_omitting_the_flag() {
+    let without = Sandbox::new();
+    let with = Sandbox::new();
+
+    let omitted = without.run(&["list", "add-recipe", "Mushroom Risotto"]);
+    let given = with.run(&["list", "add-recipe", "Mushroom Risotto", "--servings", "1"]);
+
+    assert_eq!(exit_code(&omitted), 0);
+    assert_eq!(exit_code(&given), 0);
+    assert_eq!(stdout(&given), stdout(&omitted));
+    assert_eq!(stderr(&given), stderr(&omitted));
+    assert_eq!(
+        fs::read(with.path().join(LIST_FILE)).expect("list file exists"),
+        fs::read(without.path().join(LIST_FILE)).expect("list file exists")
+    );
+}
+
+#[test]
+fn servings_2_does_not_merge_with_a_plain_entry_and_keeps_it() {
+    let sandbox = Sandbox::new();
+    assert_eq!(exit_code(&sandbox.run(&["list", "add", "tomato"])), 0);
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(
+        read_entries(sandbox.path()),
+        vec![
+            plain("tomato"),
+            entry("pasta", 400, "g"),
+            entry("tomato", 800, "g"),
+            entry("garlic", 4, "cloves"),
+            entry("olive oil", 4, "tbsp"),
+        ]
+    );
+}
+
+#[test]
+fn invalid_servings_exit_2_with_usage_and_leave_the_list_unchanged() {
+    for value in ["0", "-1", "two"] {
+        let sandbox = Sandbox::new();
+        sandbox.run(&["list", "add", "milk"]);
+        let before = fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists");
+
+        let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta", "--servings", value]);
+
+        assert_eq!(exit_code(&output), 2, "exit code for --servings {value}");
+        // Clap's usage errors all end with this hint, whether the value is out of range or not a number.
+        assert!(
+            stderr(&output).starts_with("error: ")
+                && stderr(&output).contains("For more information, try '--help'."),
+            "stderr shows a usage error for --servings {value}: {}",
+            stderr(&output)
+        );
+        assert_eq!(stdout(&output), "", "stdout for --servings {value}");
+        assert_eq!(
+            fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+            before,
+            "list unchanged for --servings {value}"
+        );
+    }
+}
+
+#[test]
+fn unknown_recipe_with_servings_exits_1_and_creates_no_file() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["list", "add-recipe", "Pizza", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(stderr(&output), "Unknown recipe: Pizza\n");
+    assert_eq!(stdout(&output), "");
+    assert!(
+        !sandbox.path().join(LIST_FILE).exists(),
+        "no list file should be created"
+    );
+}
+
+#[test]
+fn scaling_overflow_exits_1_prints_nothing_and_leaves_the_list_unchanged() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["list", "add", "milk"]);
+    let before = fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists");
+
+    let output = sandbox.run(&[
+        "list",
+        "add-recipe",
+        "Tomato Pasta",
+        "--servings",
+        "18446744073709551615",
+    ]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "error: the quantity of pasta in g is too large\n"
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+        before
+    );
+}
+
+#[test]
+fn scaling_overflow_creates_no_file_when_the_list_is_missing() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&[
+        "list",
+        "add-recipe",
+        "Tomato Pasta",
+        "--servings",
+        "18446744073709551615",
+    ]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(stdout(&output), "");
+    assert!(
+        !sandbox.path().join(LIST_FILE).exists(),
+        "no list file should be created"
+    );
+}
+
+#[test]
+fn sum_overflow_into_an_existing_entry_keeps_the_error_and_leaves_the_list_unchanged() {
+    let sandbox = Sandbox::new();
+    let contents =
+        "{\"entries\":[{\"item\":\"tomato\",\"quantity\":18446744073709551300,\"unit\":\"g\"}]}\n";
+    sandbox.write_list(contents.as_bytes());
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "error: the quantity of tomato in g is too large\n"
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+        contents.as_bytes()
+    );
+}
+
+#[test]
+fn servings_with_a_malformed_list_fails_and_leaves_the_file_byte_for_byte_unchanged() {
+    let sandbox = Sandbox::new();
+    let contents = b"{ this is not json";
+    sandbox.write_list(contents);
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta", "--servings", "2"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert!(
+        stderr(&output).contains("the shopping list cannot be read"),
+        "stderr reports the unreadable list: {}",
+        stderr(&output)
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+        contents
+    );
+}
