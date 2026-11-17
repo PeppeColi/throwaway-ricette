@@ -186,6 +186,11 @@ enum RecipesAction {
         /// The ingredient to look for, compared ignoring ASCII case.
         ingredient: String,
     },
+    /// Print the ingredients of a recipe, one per line, with quantity and unit.
+    Show {
+        /// The recipe name, compared ignoring ASCII case; quote names with spaces.
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -256,13 +261,23 @@ fn non_empty(value: &str) -> Result<String, String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Recipes { action } => {
-            match action {
-                RecipesAction::List => list_recipes(),
-                RecipesAction::Search { ingredient } => search_recipes(&ingredient),
+        Command::Recipes { action } => match action {
+            RecipesAction::List => {
+                list_recipes();
+                Ok(())
             }
-            Ok(())
-        }
+            RecipesAction::Search { ingredient } => {
+                search_recipes(&ingredient);
+                Ok(())
+            }
+            RecipesAction::Show { name } => {
+                let Some(recipe) = find_recipe(&name) else {
+                    eprintln!("Unknown recipe: {name}");
+                    return ExitCode::from(1);
+                };
+                show_recipe(recipe)
+            }
+        },
         Command::List { action } => match action {
             ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
             ListAction::AddRecipe { name } => {
@@ -308,6 +323,19 @@ fn search_recipes(ingredient: &str) {
     if !found {
         println!("No recipes found.");
     }
+}
+
+/// Prints the ingredients of `recipe` for one serving. Reads and writes no files.
+fn show_recipe(recipe: &Recipe) -> Result<(), String> {
+    // Scaled before the first line is printed, so a failure prints nothing.
+    let ingredients = scaled_ingredients(recipe, 1)?;
+    for ingredient in &ingredients {
+        println!(
+            "{} {} {}",
+            ingredient.item, ingredient.quantity, ingredient.unit
+        );
+    }
+    Ok(())
 }
 
 fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
