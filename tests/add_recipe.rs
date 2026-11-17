@@ -328,6 +328,24 @@ fn add_recipe_with_a_malformed_list_fails_and_leaves_the_file_unchanged() {
 }
 
 #[test]
+fn add_recipe_whose_write_fails_leaves_the_existing_list_unchanged() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["list", "add", "milk"]);
+    let before = fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists");
+    // A directory where the temporary file would be written makes the write fail.
+    fs::create_dir(sandbox.path().join(format!("{LIST_FILE}.tmp"))).expect("create blocker");
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert!(!stderr(&output).is_empty(), "stderr should report an error");
+    assert_eq!(
+        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
+        before
+    );
+}
+
+#[test]
 fn recipes_search_tomato_keeps_its_names_only_output() {
     let sandbox = Sandbox::new();
 

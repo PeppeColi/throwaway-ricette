@@ -418,9 +418,13 @@ fn load() -> Result<ShoppingList, String> {
     }
 }
 
+/// Replaces the list file. The new contents go to a temporary file next to it
+/// first, so a failed write leaves the existing list unchanged.
 fn save(list: &ShoppingList) -> Result<(), String> {
     let mut text = serde_json::to_string_pretty(list)
         .map_err(|e| format!("cannot serialize the shopping list: {e}"))?;
     text.push('\n');
-    fs::write(LIST_FILE, text).map_err(|e| format!("cannot write {LIST_FILE}: {e}"))
+    let temp = format!("{LIST_FILE}.tmp");
+    fs::write(&temp, text).map_err(|e| format!("cannot write {temp}: {e}"))?;
+    fs::rename(&temp, LIST_FILE).map_err(|e| format!("cannot replace {LIST_FILE}: {e}"))
 }
