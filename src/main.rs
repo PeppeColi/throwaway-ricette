@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -424,7 +424,26 @@ fn save(list: &ShoppingList) -> Result<(), String> {
     let mut text = serde_json::to_string_pretty(list)
         .map_err(|e| format!("cannot serialize the shopping list: {e}"))?;
     text.push('\n');
-    let temp = format!("{LIST_FILE}.tmp");
-    fs::write(&temp, text).map_err(|e| format!("cannot write {temp}: {e}"))?;
-    fs::rename(&temp, LIST_FILE).map_err(|e| format!("cannot replace {LIST_FILE}: {e}"))
+    // One temporary file per process, created exclusively, so two saves in
+    // the same directory never write to or rename each other's file.
+    let temp = format!("{LIST_FILE}.{}.tmp", std::process::id());
+    let result = write_new(&temp, text.as_bytes())
+        .map_err(|e| format!("cannot write {temp}: {e}"))
+        .and_then(|()| {
+            fs::rename(&temp, LIST_FILE).map_err(|e| format!("cannot replace {LIST_FILE}: {e}"))
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
+/// Writes `contents` to a file that must not exist yet.
+fn write_new(path: &str, contents: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(contents)?;
+    file.sync_all()
 }

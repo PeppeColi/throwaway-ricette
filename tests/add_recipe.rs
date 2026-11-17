@@ -327,22 +327,52 @@ fn add_recipe_with_a_malformed_list_fails_and_leaves_the_file_unchanged() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn add_recipe_whose_write_fails_leaves_the_existing_list_unchanged() {
+    use std::os::unix::fs::PermissionsExt;
+
     let sandbox = Sandbox::new();
     sandbox.run(&["list", "add", "milk"]);
     let before = fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists");
-    // A directory where the temporary file would be written makes the write fail.
-    fs::create_dir(sandbox.path().join(format!("{LIST_FILE}.tmp"))).expect("create blocker");
+    // A read-only working directory makes writing the temporary file fail.
+    let set_mode = |mode| {
+        fs::set_permissions(sandbox.path(), fs::Permissions::from_mode(mode))
+            .expect("change directory permissions")
+    };
+    set_mode(0o555);
+    if fs::write(sandbox.path().join("probe"), b"").is_ok() {
+        // Permissions are not enforced (for example when running as root).
+        set_mode(0o755);
+        return;
+    }
 
     let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta"]);
+    let after = fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists");
+    let entries: Vec<_> = fs::read_dir(sandbox.path())
+        .expect("read directory")
+        .map(|entry| entry.expect("directory entry").file_name())
+        .collect();
+    set_mode(0o755);
 
     assert_eq!(exit_code(&output), 1);
     assert!(!stderr(&output).is_empty(), "stderr should report an error");
-    assert_eq!(
-        fs::read(sandbox.path().join(LIST_FILE)).expect("list file exists"),
-        before
-    );
+    assert_eq!(after, before);
+    assert_eq!(entries, vec![std::ffi::OsString::from(LIST_FILE)]);
+}
+
+#[test]
+fn add_recipe_leaves_no_temporary_file_behind() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomato Pasta"]);
+
+    assert_eq!(exit_code(&output), 0);
+    let entries: Vec<_> = fs::read_dir(sandbox.path())
+        .expect("read directory")
+        .map(|entry| entry.expect("directory entry").file_name())
+        .collect();
+    assert_eq!(entries, vec![std::ffi::OsString::from(LIST_FILE)]);
 }
 
 #[test]
