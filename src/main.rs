@@ -224,6 +224,8 @@ enum ListAction {
         #[arg(value_parser = non_empty)]
         item: String,
     },
+    /// Remove every bought entry from the shopping list.
+    ClearBought,
     /// Print the shopping list, one item per line; bought entries end with `[bought]`.
     Show,
     /// Print how many entries the shopping list has.
@@ -321,6 +323,7 @@ fn main() -> ExitCode {
                 }
                 Err(message) => Err(message),
             },
+            ListAction::ClearBought => clear_bought(),
             ListAction::Show => show(),
             ListAction::Count => count(),
             ListAction::Last => last(),
@@ -498,6 +501,24 @@ fn mark_bought(item: &str) -> Result<bool, String> {
         println!("Bought: {item}");
     }
     Ok(matched)
+}
+
+/// Removes every bought entry, keeping the others in their order. The list is
+/// read once and written once; with no bought entries nothing is written, so a
+/// missing file is not created.
+fn clear_bought() -> Result<(), String> {
+    let mut list = load()?;
+    let entries_before = list.entries.len();
+    list.entries.retain(|entry| !entry.bought);
+    let removed = entries_before - list.entries.len();
+    if removed == 0 {
+        println!("No bought entries.");
+        return Ok(());
+    }
+    save(&list)?;
+    let noun = if removed == 1 { "entry" } else { "entries" };
+    println!("Removed {removed} bought {noun}.");
+    Ok(())
 }
 
 fn show() -> Result<(), String> {
