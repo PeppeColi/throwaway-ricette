@@ -1,5 +1,12 @@
-<<<<<<< HEAD
+use std::fs;
+use std::io::ErrorKind;
+use std::process::ExitCode;
+
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
+
+/// The shopping list lives in this file, relative to the working directory.
+const LIST_FILE: &str = "ricette-list.json";
 
 /// A recipe in the built-in catalog.
 struct Recipe {
@@ -31,23 +38,9 @@ const CATALOG: &[Recipe] = &[
     },
 ];
 
-#[derive(Parser)]
-#[command(name = "ricette", about = "Look up built-in recipes")]
-=======
-use std::fs;
-use std::io::ErrorKind;
-use std::process::ExitCode;
-
-use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
-
-/// The shopping list lives in this file, relative to the working directory.
-const LIST_FILE: &str = "ricette-list.json";
-
 /// Cooking helpers for the terminal.
 #[derive(Parser)]
 #[command(name = "ricette", version, about)]
->>>>>>> origin/dev
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -55,22 +48,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-<<<<<<< HEAD
     /// Work with the built-in recipes.
     Recipes {
         #[command(subcommand)]
         action: RecipesAction,
-=======
+    },
     /// Keep and print the shopping list.
     List {
         #[command(subcommand)]
         action: ListAction,
->>>>>>> origin/dev
     },
 }
 
 #[derive(Subcommand)]
-<<<<<<< HEAD
 enum RecipesAction {
     /// Print the names of all recipes.
     List,
@@ -81,38 +71,7 @@ enum RecipesAction {
     },
 }
 
-fn main() {
-    let cli = Cli::parse();
-    match cli.command {
-        Command::Recipes { action } => match action {
-            RecipesAction::List => list_recipes(),
-            RecipesAction::Search { ingredient } => search_recipes(&ingredient),
-        },
-    }
-}
-
-fn list_recipes() {
-    for recipe in CATALOG {
-        println!("{}", recipe.name);
-    }
-}
-
-fn search_recipes(ingredient: &str) {
-    let mut found = false;
-    for recipe in CATALOG {
-        if recipe
-            .ingredients
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(ingredient))
-        {
-            println!("{}", recipe.name);
-            found = true;
-        }
-    }
-    if !found {
-        println!("No recipes found.");
-    }
-=======
+#[derive(Subcommand)]
 enum ListAction {
     /// Append an item to the shopping list.
     Add {
@@ -149,6 +108,13 @@ fn non_empty(value: &str) -> Result<String, String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::Recipes { action } => {
+            match action {
+                RecipesAction::List => list_recipes(),
+                RecipesAction::Search { ingredient } => search_recipes(&ingredient),
+            }
+            Ok(())
+        }
         Command::List { action } => match action {
             ListAction::Add { item } => add(&item),
             ListAction::Show => show(),
@@ -161,6 +127,29 @@ fn main() -> ExitCode {
             eprintln!("error: {message}");
             ExitCode::from(1)
         }
+    }
+}
+
+fn list_recipes() {
+    for recipe in CATALOG {
+        println!("{}", recipe.name);
+    }
+}
+
+fn search_recipes(ingredient: &str) {
+    let mut found = false;
+    for recipe in CATALOG {
+        if recipe
+            .ingredients
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(ingredient))
+        {
+            println!("{}", recipe.name);
+            found = true;
+        }
+    }
+    if !found {
+        println!("No recipes found.");
     }
 }
 
@@ -211,5 +200,4 @@ fn save(list: &ShoppingList) -> Result<(), String> {
         .map_err(|e| format!("cannot serialize the shopping list: {e}"))?;
     text.push('\n');
     fs::write(LIST_FILE, text).map_err(|e| format!("cannot write {LIST_FILE}: {e}"))
->>>>>>> origin/dev
 }
