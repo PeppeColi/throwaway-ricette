@@ -255,6 +255,39 @@ fn show_an_unknown_recipe_creates_no_file() {
 }
 
 #[test]
+fn show_an_unknown_name_close_to_one_recipe_suggests_it_on_a_second_stderr_line() {
+    let (output, _dir) = run_in_empty_dir(&["recipes", "show", "Tomatto Pasta"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "Unknown recipe: Tomatto Pasta\nDid you mean: Tomato Pasta?\n"
+    );
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn show_suggestion_ignores_ascii_case() {
+    let (output, _dir) = run_in_empty_dir(&["recipes", "show", "CAPRESE SALDA"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "Unknown recipe: CAPRESE SALDA\nDid you mean: Caprese Salad?\n"
+    );
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn show_an_unknown_name_far_from_every_recipe_prints_no_suggestion() {
+    let (output, _dir) = run_in_empty_dir(&["recipes", "show", "Tomato"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(stderr(&output), "Unknown recipe: Tomato\n");
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
 fn show_without_a_name_is_a_usage_error_on_stderr() {
     let (output, _dir) = run_in_empty_dir(&["recipes", "show"]);
 

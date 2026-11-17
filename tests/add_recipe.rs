@@ -295,6 +295,17 @@ fn unknown_recipe_exits_1_with_message_on_stderr_and_creates_no_file() {
 }
 
 #[test]
+fn unknown_recipe_close_to_a_name_prints_no_suggestion() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["list", "add-recipe", "Tomatto Pasta"]);
+
+    assert_eq!(exit_code(&output), 1);
+    assert_eq!(stderr(&output), "Unknown recipe: Tomatto Pasta\n");
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
 fn unknown_recipe_leaves_an_existing_list_unchanged() {
     let sandbox = Sandbox::new();
     sandbox.run(&["list", "add", "milk"]);
