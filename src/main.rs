@@ -209,6 +209,8 @@ enum ListAction {
     },
     /// Print the shopping list, one item per line.
     Show,
+    /// Print how many entries the shopping list has.
+    Count,
     /// Empty the shopping list.
     Clear,
 }
@@ -269,6 +271,7 @@ fn main() -> ExitCode {
                 add_recipe(recipe)
             }
             ListAction::Show => show(),
+            ListAction::Count => count(),
             ListAction::Clear => clear(),
         },
     };
@@ -394,6 +397,16 @@ fn show() -> Result<(), String> {
     for entry in &list.entries {
         println!("{}", entry.display());
     }
+    Ok(())
+}
+
+/// Prints the number of entries, counting duplicates. Reads the list only, so
+/// the file is never written.
+fn count() -> Result<(), String> {
+    let list = load()?;
+    let entries = list.entries.len();
+    let noun = if entries == 1 { "entry" } else { "entries" };
+    println!("{entries} {noun}");
     Ok(())
 }
 
