@@ -186,6 +186,14 @@ enum RecipesAction {
         /// The ingredient to look for, compared ignoring ASCII case.
         ingredient: String,
     },
+    /// Print the ingredients of a recipe, one per line, with quantity and unit.
+    Show {
+        /// The recipe name, compared ignoring ASCII case; quote names with spaces.
+        name: String,
+        /// How many servings to print; every quantity is multiplied by it.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+        servings: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -206,6 +214,9 @@ enum ListAction {
     AddRecipe {
         /// The recipe name, compared ignoring ASCII case; quote names with spaces.
         name: String,
+        /// How many servings to add; every quantity is multiplied by it.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+        servings: u64,
     },
     /// Print the shopping list, one item per line.
     Show,
@@ -256,21 +267,31 @@ fn non_empty(value: &str) -> Result<String, String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Recipes { action } => {
-            match action {
-                RecipesAction::List => list_recipes(),
-                RecipesAction::Search { ingredient } => search_recipes(&ingredient),
+        Command::Recipes { action } => match action {
+            RecipesAction::List => {
+                list_recipes();
+                Ok(())
             }
-            Ok(())
-        }
-        Command::List { action } => match action {
-            ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
-            ListAction::AddRecipe { name } => {
+            RecipesAction::Search { ingredient } => {
+                search_recipes(&ingredient);
+                Ok(())
+            }
+            RecipesAction::Show { name, servings } => {
                 let Some(recipe) = find_recipe(&name) else {
                     eprintln!("Unknown recipe: {name}");
                     return ExitCode::from(1);
                 };
-                add_recipe(recipe)
+                show_recipe(recipe, servings)
+            }
+        },
+        Command::List { action } => match action {
+            ListAction::Add { item, qty, unit } => add(&item, qty, unit.as_deref()),
+            ListAction::AddRecipe { name, servings } => {
+                let Some(recipe) = find_recipe(&name) else {
+                    eprintln!("Unknown recipe: {name}");
+                    return ExitCode::from(1);
+                };
+                add_recipe(recipe, servings)
             }
             ListAction::Show => show(),
             ListAction::Count => count(),
@@ -310,6 +331,19 @@ fn search_recipes(ingredient: &str) {
     }
 }
 
+/// Prints the ingredients of `recipe` for `servings` servings. Reads and writes no files.
+fn show_recipe(recipe: &Recipe, servings: u64) -> Result<(), String> {
+    // Scaled before the first line is printed, so a failure prints nothing.
+    let ingredients = scaled_ingredients(recipe, servings)?;
+    for ingredient in &ingredients {
+        println!(
+            "{} {} {}",
+            ingredient.item, ingredient.quantity, ingredient.unit
+        );
+    }
+    Ok(())
+}
+
 fn add(item: &str, qty: Option<u64>, unit: Option<&str>) -> Result<(), String> {
     let mut list = load()?;
     match (qty, unit) {
@@ -339,12 +373,13 @@ fn find_recipe(name: &str) -> Option<&'static Recipe> {
         .find(|recipe| recipe.name.eq_ignore_ascii_case(name))
 }
 
-/// Adds every ingredient of `recipe` to the list, in recipe order, with the same
-/// merge rule as `add`. The list is read once and written once, so a failure
-/// leaves the file unchanged and prints nothing.
-fn add_recipe(recipe: &Recipe) -> Result<(), String> {
+/// Adds every ingredient of `recipe`, scaled to `servings`, to the list, in recipe
+/// order, with the same merge rule as `add`. The list is read once and written
+/// once, so a failure leaves the file unchanged and prints nothing.
+fn add_recipe(recipe: &Recipe, servings: u64) -> Result<(), String> {
+    let ingredients = scaled_ingredients(recipe, servings)?;
     let mut list = load()?;
-    for ingredient in recipe.ingredients {
+    for ingredient in &ingredients {
         add_quantified(
             &mut list,
             ingredient.item,
@@ -353,13 +388,36 @@ fn add_recipe(recipe: &Recipe) -> Result<(), String> {
         )?;
     }
     save(&list)?;
-    for ingredient in recipe.ingredients {
+    for ingredient in &ingredients {
         println!(
             "Added: {} {} {}",
             ingredient.item, ingredient.quantity, ingredient.unit
         );
     }
     Ok(())
+}
+
+/// The ingredients of `recipe` in recipe order, each quantity multiplied by
+/// `servings`. Fails with the first ingredient whose scaled quantity does not
+/// fit in a `u64`.
+fn scaled_ingredients(recipe: &Recipe, servings: u64) -> Result<Vec<Ingredient>, String> {
+    recipe
+        .ingredients
+        .iter()
+        .map(|ingredient| {
+            let quantity = ingredient.quantity.checked_mul(servings).ok_or_else(|| {
+                format!(
+                    "the quantity of {} in {} is too large",
+                    ingredient.item, ingredient.unit
+                )
+            })?;
+            Ok(Ingredient {
+                item: ingredient.item,
+                quantity,
+                unit: ingredient.unit,
+            })
+        })
+        .collect()
 }
 
 /// Adds `quantity` of `item` in `unit`: the first entry with the same item and
@@ -473,4 +531,195 @@ fn write_new(path: &str, contents: &[u8]) -> std::io::Result<()> {
         .open(path)?;
     file.write_all(contents)?;
     file.sync_all()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The item, quantity and unit of each ingredient, in order.
+    fn summary(ingredients: &[Ingredient]) -> Vec<(&str, u64, &str)> {
+        ingredients
+            .iter()
+            .map(|ingredient| (ingredient.item, ingredient.quantity, ingredient.unit))
+            .collect()
+    }
+
+    #[test]
+    fn find_recipe_returns_each_catalog_recipe_by_name() {
+        for name in [
+            "Tomato Pasta",
+            "Mushroom Risotto",
+            "Caprese Salad",
+            "Vegetable Soup",
+            "Cheese Omelette",
+        ] {
+            let recipe = find_recipe(name).expect("the catalog has this recipe");
+            assert_eq!(recipe.name, name);
+        }
+    }
+
+    #[test]
+    fn find_recipe_ignores_ascii_case() {
+        assert_eq!(
+            find_recipe("tomato pasta").map(|r| r.name),
+            Some("Tomato Pasta")
+        );
+        assert_eq!(
+            find_recipe("CAPRESE SALAD").map(|r| r.name),
+            Some("Caprese Salad")
+        );
+        assert_eq!(
+            find_recipe("cHeEsE oMeLeTtE").map(|r| r.name),
+            Some("Cheese Omelette")
+        );
+    }
+
+    #[test]
+    fn find_recipe_returns_none_for_unknown_names() {
+        assert!(find_recipe("Pizza").is_none());
+        assert!(find_recipe("").is_none());
+        assert!(
+            find_recipe("Tomato").is_none(),
+            "a part of a name is not a match"
+        );
+        assert!(find_recipe("Tomato Pasta!").is_none());
+    }
+
+    #[test]
+    fn scaled_ingredients_at_one_serving_match_the_catalog() {
+        let expected = [
+            (
+                "Tomato Pasta",
+                vec![
+                    ("pasta", 200, "g"),
+                    ("tomato", 400, "g"),
+                    ("garlic", 2, "cloves"),
+                    ("olive oil", 2, "tbsp"),
+                ],
+            ),
+            (
+                "Mushroom Risotto",
+                vec![
+                    ("rice", 300, "g"),
+                    ("mushroom", 250, "g"),
+                    ("onion", 1, "piece"),
+                    ("butter", 50, "g"),
+                    ("parmesan", 80, "g"),
+                ],
+            ),
+            (
+                "Caprese Salad",
+                vec![
+                    ("tomato", 300, "g"),
+                    ("mozzarella", 250, "g"),
+                    ("basil", 10, "g"),
+                    ("olive oil", 1, "tbsp"),
+                ],
+            ),
+            (
+                "Vegetable Soup",
+                vec![
+                    ("carrot", 200, "g"),
+                    ("potato", 300, "g"),
+                    ("onion", 1, "piece"),
+                    ("celery", 150, "g"),
+                    ("tomato", 400, "g"),
+                ],
+            ),
+            (
+                "Cheese Omelette",
+                vec![
+                    ("egg", 3, "pieces"),
+                    ("cheese", 50, "g"),
+                    ("butter", 10, "g"),
+                ],
+            ),
+        ];
+        for (name, ingredients) in expected {
+            let recipe = find_recipe(name).expect("the catalog has this recipe");
+            let scaled = scaled_ingredients(recipe, 1).expect("one serving does not overflow");
+            assert_eq!(summary(&scaled), ingredients, "{name} at one serving");
+        }
+    }
+
+    #[test]
+    fn scaled_ingredients_at_two_servings_double_every_quantity() {
+        let expected = [
+            (
+                "Tomato Pasta",
+                vec![
+                    ("pasta", 400, "g"),
+                    ("tomato", 800, "g"),
+                    ("garlic", 4, "cloves"),
+                    ("olive oil", 4, "tbsp"),
+                ],
+            ),
+            (
+                "Mushroom Risotto",
+                vec![
+                    ("rice", 600, "g"),
+                    ("mushroom", 500, "g"),
+                    ("onion", 2, "piece"),
+                    ("butter", 100, "g"),
+                    ("parmesan", 160, "g"),
+                ],
+            ),
+            (
+                "Caprese Salad",
+                vec![
+                    ("tomato", 600, "g"),
+                    ("mozzarella", 500, "g"),
+                    ("basil", 20, "g"),
+                    ("olive oil", 2, "tbsp"),
+                ],
+            ),
+            (
+                "Vegetable Soup",
+                vec![
+                    ("carrot", 400, "g"),
+                    ("potato", 600, "g"),
+                    ("onion", 2, "piece"),
+                    ("celery", 300, "g"),
+                    ("tomato", 800, "g"),
+                ],
+            ),
+            (
+                "Cheese Omelette",
+                vec![
+                    ("egg", 6, "pieces"),
+                    ("cheese", 100, "g"),
+                    ("butter", 20, "g"),
+                ],
+            ),
+        ];
+        for (name, ingredients) in expected {
+            let recipe = find_recipe(name).expect("the catalog has this recipe");
+            let scaled = scaled_ingredients(recipe, 2).expect("two servings do not overflow");
+            assert_eq!(summary(&scaled), ingredients, "{name} at two servings");
+        }
+    }
+
+    #[test]
+    fn scaled_ingredients_reports_the_first_quantity_that_overflows() {
+        const RECIPE: Recipe = Recipe {
+            name: "Overflow",
+            ingredients: &[
+                Ingredient {
+                    item: "pasta",
+                    quantity: 200,
+                    unit: "g",
+                },
+                Ingredient {
+                    item: "tomato",
+                    quantity: 400,
+                    unit: "g",
+                },
+            ],
+        };
+        let error = scaled_ingredients(&RECIPE, u64::MAX)
+            .err()
+            .expect("200 times u64::MAX does not fit in u64");
+        assert_eq!(error, "the quantity of pasta in g is too large");
+    }
 }
