@@ -1,6 +1,6 @@
 # End-to-end tests
 
-**End-to-end tests per feature: off.** `PEPPEC_E2E_FEATURE` is not set: specifications write no "End-to-end" section, and no work unit writes end-to-end tests. Kept up to date by `peppec init`.
+**End-to-end tests per feature: off.** `PEPPEC_E2E_FEATURE` is not set: specifications write an "End-to-end" section only for a manual check, and no work unit writes end-to-end tests. Kept up to date by `peppec init`.
 
 How this repository writes and runs its end-to-end tests. Planning sessions read it when a
 specification decides whether a feature needs new ones (the "End-to-end" section, see the PEPPEC
