@@ -211,6 +211,8 @@ enum ListAction {
     Show,
     /// Print how many entries the shopping list has.
     Count,
+    /// Print the item of the most recently added entry of the shopping list.
+    Last,
     /// Empty the shopping list.
     Clear,
 }
@@ -272,6 +274,7 @@ fn main() -> ExitCode {
             }
             ListAction::Show => show(),
             ListAction::Count => count(),
+            ListAction::Last => last(),
             ListAction::Clear => clear(),
         },
     };
@@ -407,6 +410,17 @@ fn count() -> Result<(), String> {
     let entries = list.entries.len();
     let noun = if entries == 1 { "entry" } else { "entries" };
     println!("{entries} {noun}");
+    Ok(())
+}
+
+/// Prints the item of the last entry in the list, which is the most recently
+/// added one. Reads the list only, so the file is never written.
+fn last() -> Result<(), String> {
+    let list = load()?;
+    match list.entries.last() {
+        Some(entry) => println!("{}", entry.item),
+        None => println!("The shopping list is empty."),
+    }
     Ok(())
 }
 
