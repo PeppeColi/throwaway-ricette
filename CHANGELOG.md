@@ -19,3 +19,4 @@ lines under a new heading with the version and the date.
 - `ricette recipes show "<name>"` prints the ingredients of a recipe, one per line as `<item> <quantity> <unit>`; an unknown recipe name exits 1.
 - `ricette recipes show "<name>" --servings <n>` multiplies every quantity by `n`, a positive whole number that defaults to 1.
 - `ricette list add-recipe "<name>" --servings <n>` adds the recipe scaled by `n` to the shopping list, summing with amounts already listed, and prints the scaled amounts.
+- `ricette list bought "<item>"` marks every shopping list entry with that item as bought, and `ricette list show` ends their lines with `[bought]`; adding an amount to a bought entry unmarks it, and existing `ricette-list.json` files keep working.
